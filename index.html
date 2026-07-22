@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>极简番茄钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+        .mode {
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            padding: 0.3rem 1rem;
+            display: inline-block;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.05);
+        }
+        .mode.work {
+            color: #ff6b6b;
+            border: 1px solid #ff6b6b;
+        }
+        .mode.break {
+            color: #51cf66;
+            border: 1px solid #51cf66;
+        }
+        .time {
+            font-size: 6rem;
+            font-weight: 300;
+            letter-spacing: 4px;
+            margin: 1.5rem 0;
+            font-variant-numeric: tabular-nums;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+        .btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #e0e0e0;
+            padding: 0.7rem 1.8rem;
+            font-size: 1rem;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+        }
+        .btn:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.4);
+        }
+        .btn:active {
+            transform: scale(0.96);
+        }
+        .btn.primary {
+            background: #ff6b6b;
+            border-color: #ff6b6b;
+            color: #1a1a2e;
+            font-weight: 600;
+        }
+        .btn.primary:hover {
+            background: #ff5252;
+            border-color: #ff5252;
+        }
+        .btn.primary.running {
+            background: #fcc419;
+            border-color: #fcc419;
+        }
+        .btn.secondary {
+            border-color: rgba(255,255,255,0.15);
+        }
+        .status-bar {
+            margin-top: 2rem;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.4);
+            letter-spacing: 1px;
+        }
+        .cycle-count {
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="app">
+        <div class="mode work" id="modeLabel">工作</div>
+        <div class="time" id="timeDisplay">25:00</div>
+        <div class="controls">
+            <button class="btn primary" id="mainBtn">开始</button>
+            <button class="btn secondary" id="resetBtn">重置</button>
+        </div>
+        <div class="status-bar" id="statusBar">点击开始专注</div>
+        <div class="cycle-count" id="cycleCount">已完成 0 个番茄</div>
+    </div>
+    <script>
+        (function() {
+            const WORK_TIME = 25 * 60; // 25分钟
+            const BREAK_TIME = 5 * 60;  // 5分钟
+
+            // DOM 元素
+            const modeLabel = document.getElementById('modeLabel');
+            const timeDisplay = document.getElementById('timeDisplay');
+            const mainBtn = document.getElementById('mainBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const statusBar = document.getElementById('statusBar');
+            const cycleCountEl = document.getElementById('cycleCount');
+
+            // 状态
+            let state = {
+                isWork: true,
+                isRunning: false,
+                timeLeft: WORK_TIME,
+                cycles: 0
+            };
+
+            let timerId = null;
+
+            // 格式化时间 mm:ss
+            function formatTime(seconds) {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+
+            // 更新UI
+            function updateUI() {
+                // 模式标签
+                if (state.isWork) {
+                    modeLabel.textContent = '工作';
+                    modeLabel.className = 'mode work';
+                } else {
+                    modeLabel.textContent = '休息';
+                    modeLabel.className = 'mode break';
+                }
+
+                // 时间
+                timeDisplay.textContent = formatTime(state.timeLeft);
+
+                // 主按钮
+                if (state.isRunning) {
+                    mainBtn.textContent = '暂停';
+                    mainBtn.className = 'btn primary running';
+                } else {
+                    mainBtn.textContent = '开始';
+                    mainBtn.className = 'btn primary';
+                }
+
+                // 状态栏
+                if (state.isRunning) {
+                    statusBar.textContent = state.isWork ? '专注中...' : '休息中...';
+                } else {
+                    statusBar.textContent = state.isWork ? '准备开始' : '准备休息';
+                }
+
+                // 番茄计数
+                cycleCountEl.textContent = `已完成 ${state.cycles} 个番茄`;
+            }
+
+            // 发送通知
+            function sendNotification(title, body) {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(title, { body });
+                } else if ('Notification' in window && Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            new Notification(title, { body });
+                        }
+                    });
+                }
+            }
+
+            // 切换模式（工作/休息）
+            function switchMode() {
+                state.isWork = !state.isWork;
+                state.timeLeft = state.isWork ? WORK_TIME : BREAK_TIME;
+                updateUI();
+
+                if (state.isWork) {
+                    sendNotification('番茄钟', '休息结束，开始工作！');
+                } else {
+                    sendNotification('番茄钟', '工作完成，休息一下！');
+                }
+            }
+
+            // 计时器滴答
+            function tick() {
+                state.timeLeft -= 1;
+                if (state.timeLeft <= 0) {
+                    // 当前模式结束
+                    if (state.isWork) {
+                        state.cycles += 1;
+                    }
+                    switchMode();
+                    // 如果正在运行，继续自动开始下一个模式
+                    if (state.isRunning) {
+                        // 继续计时
+                    } else {
+                        // 如果被暂停了，停止计时器
+                        if (timerId) {
+                            clearInterval(timerId);
+                            timerId = null;
+                        }
+                    }
+                }
+                updateUI();
+            }
+
+            // 开始计时
+            function startTimer() {
+                if (timerId) return;
+                state.isRunning = true;
+                timerId = setInterval(tick, 1000);
+                updateUI();
+            }
+
+            // 暂停计时
+            function pauseTimer() {
+                if (timerId) {
+                    clearInterval(timerId);
+                    timerId = null;
+                }
+                state.isRunning = false;
+                updateUI();
+            }
+
+            // 重置
+            function resetTimer() {
+                pauseTimer();
+                state.isWork = true;
+                state.timeLeft = WORK_TIME;
+                state.cycles = 0;
+                updateUI();
+            }
+
+            // 主按钮点击
+            function handleMainClick() {
+                if (state.isRunning) {
+                    pauseTimer();
+                } else {
+                    startTimer();
+                }
+            }
+
+            // 事件绑定
+            mainBtn.addEventListener('click', handleMainClick);
+            resetBtn.addEventListener('click', resetTimer);
+
+            // 请求通知权限
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+
+            // 初始化UI
+            updateUI();
+        })();
+    </script>
+</body>
+</html>
